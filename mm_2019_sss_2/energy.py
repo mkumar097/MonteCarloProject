@@ -86,7 +86,7 @@ class EnergyFunctions:
 
         return e_total
 
-    def calculate_pair_energy(self, i_particle):
+    def calculate_pair_energy(self, i_particle, coordinates):
         """This function computes the sum of all pairwise VDW energy between each
             pair of particles in the system.
         Parameters
@@ -114,7 +114,7 @@ class EnergyFunctions:
 
         for j_particle in range(self.n_particles):
             if i_particle != j_particle:
-                j_position = self.coordinates[j_particle]
+                j_position = coordinates[j_particle]
                 distance = self.minimum_image_distance(i_position, j_position,
                                                        self.box_length)
                 if distance < self.cutoff:
