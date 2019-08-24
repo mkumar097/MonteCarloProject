@@ -1,132 +1,32 @@
 import numpy as np
-from abc import ABC, abstractmethod
-
-class EnergyFunction(ABC):
-    """This class is an abstract class for all the energy functions that are
-    going to be written. All energy functions that inherit this structure MUST
-    have a calc_energy method and a cutoff_correction method.
-    """
-
-    @abstractmethod
-    def calc_energy(self):
-        pass
-
-    @abstractmethod
-    def cutoff_correction(self):
-        pass
-
-class LJ(EnergyFunction):
-    """Setup for the Lennard-Jones potential.
-
-    Parameters
-    ----------
-    epsilon: float, int
-    sigma: float, int
-    """
-
-    def __init__(self, epsilon: (int, float) = 0.5,
-                 sigma: (int, float) = 1.0):
-        self.sigma = float(sigma)
-        self.epsilon = float(epsilon)
-
-    def calc_energy(self, r):
-        return (4 * self.epsilon * ((self.sigma / r) ** 12
-                                    - (self.sigma / r) ** 6))
-
-    def cutoff_correction(self, cutoff, number_particles, box_length):
-        return(0)
-
-class Buckingham(EnergyFunction):
-    """Set-up for the Buckingham potential.
-    
-    Parameters
-    ----------
-    rho: float, int
-    a: float, int
-    c: float, int
-    """
-
-    def __init__(self, rho: (int, float) = 1.0, a: (int, float) = 1.0,
-                 c: (int, float) = 1.0):
-        self.rho = float(rho)
-        self.a = float(a)
-        self.c = float(c)
-
-    def calc_energy(self, r):
-        return self.a * np.exp(-r / self.rho) - self.c / r ** 6
-
-    def cutoff_correction(self, cutoff, number_particles, box_length):
-        return(0)
-
-class UnitlessLJ(EnergyFunction):
-    """Set-up for the Buckingham potential.
-    
-    Parameters
-    ----------
-    r: float, int
-    """
-
-    def __init__(self):
-        pass
-
-    def calc_energy(self, r: (int, float) = None):
-        return 4.0 * (np.power(1 / r, 12)
-                      - np.power(1 / r, 6))
-
-    def cutoff_correction(self, cutoff, number_particles, box_length):
-        volume = np.power(box_length, 3)
-        sig_by_cutoff3 = np.power(1.0 / cutoff, 3)
-        sig_by_cutoff9 = np.power(sig_by_cutoff3, 3)
-        e_correction = sig_by_cutoff9 - 3.0 * sig_by_cutoff3
-
-        e_correction *= 8.0 / 9.0 * np.pi * number_particles / volume * number_particles
-
-        return e_correction
 
 
-class potentialEnergyFactory:
-    def __init__(self):
-        self.methods = {'LJ': LJ,
-                        'Buckingham': Buckingham,
-                        'UnitlessLJ': UnitlessLJ,
-                        }
+class EnergyFunctions:
 
-    def build_energy_method(self, potential_type, **kwargs):
-        energy_class = self.methods[potential_type](**kwargs)
+    @staticmethod
+    def LJ(r: float):
+        return 4 * ((1.0 / r) ** 12
+                    - (1.0 / r) ** 6)
 
-        return (energy_class)
+    @property
+    def tail_correction(self):
+        r3 = np.power(1.0 / self.cutoff, 3)
+        r9 = np.power(r3, 3)
+        v = self.volume
+        n2 = np.power(self.n_particles, 2)
 
+        return ((8.0 * np.pi * n2) / (3.0 * v)) * (((1.0 / 3.0) * r9) - r3)
 
-class Energy:
-    def __init__(self, potential_type='UnitlessLJ', simulation_cutoff=3.0,
-                 **kwargs):
-        self.energy_obj = potentialEnergyFactory().build_energy_method(
-            potential_type, **kwargs)
-        self.simulation_cutoff = simulation_cutoff
+    # TODO: Commented out until I can check this.
+    # @staticmethod
+    # def Buckingham(a: float, c: float, rho: float, r: float):
+    #     return a * np.exp(-r / rho) - c / r ** 6
 
-    def calculate_tail_correction(self, number_particles, box_length):
-        """This function computes the standard tail energy correction for the LJ potential
-        Parameters
-        ----------
-        box_length : float, int
-            length of of side of the simulation box (cube)
-        cutoff: float, int
-            the cutoff for the tail energy truncation
-        num_particles: int
-            number of particles
-        Returns
-        -------
-        e_correction: float
-            tail correction of energy
-        """
-        e_correction = self.energy_obj.cutoff_correction(
-            self.simulation_cutoff, number_particles, box_length)
-        return e_correction
-
-    def _minimum_image_distance(self, r_i, r_j, box_length):
-        """
-        Calculates the shortest distance between a particle and another
-        instance in a periodic boundary condition image
+    @staticmethod
+    def minimum_image_distance(r_i: np.array, r_j: np.array,
+                               box_length: float):
+        """Calculates the shortest distance between a particle and another
+        instance in a periodic boundary condition image.
         Parameters
         ----------
         r_i: np.array([n,3])
@@ -140,15 +40,15 @@ class Energy:
         rij2: np.array([n,3])
             The minimum image distance between the two particles, r_i and r_j.
         """
-        # This function computes the minimum image distance between two particles
         rij = r_i - r_j
-        rij = rij - box_length * np.round(rij / box_length)
+        rij -= box_length * np.round(rij / box_length)
         rij2 = np.dot(rij, rij)
         distance = np.sqrt(rij2)
 
         return distance
 
-    def calculate_initial_energy(self, coordinates, box_length):
+    @property
+    def initial_energy(self):
         """Iterates over a set of coordinates to calculate total system energy
         This function computes the sum of all pairwise VDW energy between each
         pair of particles in the system. This is the first instance of the
@@ -173,18 +73,20 @@ class Energy:
             the system.
         """
         e_total = 0.0
-        particle_count = len(coordinates)
-        for i_particle in range(particle_count):
+
+        for i_particle in range(self.n_particles):
             for j_particle in range(i_particle):
-                r_i = coordinates[i_particle]
-                r_j = coordinates[j_particle]
-                rij = self._minimum_image_distance(r_i, r_j, box_length)
-                if rij < self.simulation_cutoff:
-                    e_pair = self.energy_obj.calc_energy(rij)
+                r_i = self.coordinates[i_particle]
+                r_j = self.coordinates[j_particle]
+                distance = self.minimum_image_distance(r_i, r_j,
+                                                       self.box_length)
+                if distance < self.cutoff:
+                    e_pair = self.LJ(distance)
                     e_total += e_pair
+
         return e_total
 
-    def calculate_pair_energy(self, coordinates, box_length, i_particle):
+    def calculate_pair_energy(self, i_particle, coordinates):
         """This function computes the sum of all pairwise VDW energy between each
             pair of particles in the system.
         Parameters
@@ -196,8 +98,8 @@ class Energy:
             A float indicating the size of the simulation box. Can be either
             hard-coded or calculated using num_particles and reduced_density.
         cutoff: float
-            The square of the simulation_cutoff, which is the cutoff distance between
-            two interacting particles.
+            The square of the simulation_cutoff, which is the cutoff distance
+            between two interacting particles.
         i_particle: integer
             Intitial particle for pairwise count
         Returns
@@ -207,35 +109,16 @@ class Energy:
             the system.
         """
 
-        # This function computes the energy of a particle with
-        # the rest of the system
-
         e_total = 0.0
+        i_position = self.coordinates[i_particle]
 
-        i_position = coordinates[i_particle]
-
-        particle_count = len(coordinates)
-
-        for j_particle in range(particle_count):
-
+        for j_particle in range(self.n_particles):
             if i_particle != j_particle:
-
                 j_position = coordinates[j_particle]
-
-                rij = self._minimum_image_distance(i_position, j_position,
-                                                    box_length)
-
-                if rij < self.simulation_cutoff:
-                    e_pair = self.energy_obj.calc_energy(rij)
+                distance = self.minimum_image_distance(i_position, j_position,
+                                                       self.box_length)
+                if distance < self.cutoff:
+                    e_pair = self.LJ(distance)
                     e_total += e_pair
+
         return e_total
-
-
-def main():
-    energy_factory = potentialEnergyFactory()
-    lj_energy = energy_factory.build_energy_method('UnitlessLJ')
-    print(lj_energy.calc_energy(2.0))
-
-
-if __name__ == "__main__":
-    main()
