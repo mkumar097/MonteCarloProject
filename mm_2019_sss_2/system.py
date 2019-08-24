@@ -36,11 +36,13 @@ class SystemSetup:
     """
 
     def __init__(self, method: str = 'random', num_particles: int = 20,
-                 reduced_density: (int, float) = 0.9, filename: str = None):
+                 reduced_density: (int, float) = 0.9, filename: str = None,
+                 reduced_temperature: (int, float) = 0.9):
 
         self._method = method
         self._n_particles = num_particles
         self._reduced_density = float(reduced_density)
+        self._reduced_temperature = float(reduced_temperature)
 
         if self.method == 'random':
             self._initialize_random_simulation_(self.box_length)
@@ -81,6 +83,14 @@ class SystemSetup:
     @property
     def cutoff(self):
         return self.box_length / 3.0
+
+    @property
+    def reduced_temperature(self):
+        return self._reduced_temperature
+
+    @property
+    def beta(self):
+        return 1.0 / self._reduced_temperature
 
     def _read_in_error_(self, num_particles, box_length):
         print('Either you entered the incorrect file or the file was not '
